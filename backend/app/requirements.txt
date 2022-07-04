@@ -6,4 +6,5 @@ fastapi-users[sqlalchemy,oauth]
 sqlalchemy-utils
 psycopg2-binary
 python-multipart
+requests
 uvicorn

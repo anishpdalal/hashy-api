@@ -4,13 +4,13 @@ from sqlalchemy import delete
 from app.models.user import APIKey, User
 
 
-async def delete(db: AsyncSession, user: User):
+async def delete_api_key(db: AsyncSession, user: User):
     await db.execute(delete(APIKey).where(APIKey.user_id == str(user.id)))
     await db.commit()
     return
 
 
-async def create(db: AsyncSession, user: User):
+async def create_api_key(db: AsyncSession, user: User):
     api_key = APIKey(user_id=str(user.id))
     db.add(api_key)
     await db.commit()

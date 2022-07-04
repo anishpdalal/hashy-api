@@ -12,6 +12,8 @@ class Document(Base):
     owner = Column(UUID, ForeignKey("user.id"), nullable=False)
     name = Column(String, nullable=False)
     type = Column(String, nullable=False)
+    doc_id = Column(String)
+    doc_last_updated = Column(DateTime(timezone=True))
     is_boosted = Column(Boolean, default=False)
     created = Column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

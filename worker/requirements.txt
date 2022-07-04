@@ -1,0 +1,10 @@
+awslambdaric
+boto3
+pinecone-client
+protobuf
+psycopg2-binary
+requests
+sqlalchemy-utils
+sentence-transformers
+SQLAlchemy
+torch

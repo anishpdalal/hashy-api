@@ -1,4 +1,5 @@
 import os
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,8 +12,9 @@ from app.api.deps import (
     get_async_session,
     fastapi_users
 )
-from app.crud.api_key import create, delete
-from app.models.user import APIKey, User
+from app.crud.api_key import create_api_key, delete_api_key
+from app.models.user import User
+from app.schemas.auth import ZendeskAuth
 from app.schemas.user import UserCreate, UserRead
 
 
@@ -54,7 +56,20 @@ api_router.include_router(
 @api_router.post("/auth/api_key", tags=["auth"])
 async def generate_api_key(user: User = Depends(current_active_user), db: AsyncSession = Depends(get_async_session)):
     if user.api_key:
-        delete(db, user)
-    create(db, user)
+        await delete_api_key(db, user)
+    await create_api_key(db, user)
     return {"message": "Successfully created an API key!"}
 
+
+@api_router.post("/auth/zendesk", tags=["auth"])
+async def zendesk_auth(auth: ZendeskAuth, user: User = Depends(current_active_user)):
+    user_id = user.id
+    parameters = {
+        "response_type": "code",
+        "redirect_uri": os.getenv("ZENDESK_REDIRECT_URI"),
+        "client_id": os.getenv("ZENDESK_CLIENT_ID"),
+        "scope": "users:read tickets:read hc:read triggers:read triggers:write automations:read automations:write",
+        "state": f"{user_id}|{auth.subdomain}"
+    }
+    url = f"https://{auth.subdomain}/oauth/authorizations/new?{urlencode(parameters)}"
+    return {"authorization_url": url}
