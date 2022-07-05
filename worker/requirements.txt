@@ -1,8 +1,10 @@
 awslambdaric
+beautifulsoup4
 boto3
 pinecone-client
 protobuf
 psycopg2-binary
+pysbd
 requests
 sqlalchemy-utils
 sentence-transformers
