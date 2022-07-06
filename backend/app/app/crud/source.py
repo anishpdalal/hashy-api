@@ -36,6 +36,15 @@ async def get_source(
     return result.scalar_one()
 
 
+async def get_sources(
+    db: AsyncSession,
+    user_id: str
+):
+    stmt = select(Source).where(Source.owner == user_id)
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
+
 async def update_source(
     db: AsyncSession,
     id: str,

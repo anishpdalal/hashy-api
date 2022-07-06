@@ -3,8 +3,12 @@ asyncpg
 httpx-oauth
 fastapi
 fastapi-users[sqlalchemy,oauth]
+openai
+pinecone-client
 sqlalchemy-utils
 psycopg2-binary
 python-multipart
+sentence-transformers
 requests
+torch
 uvicorn
