@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Union
 
 from pydantic import BaseModel
 
@@ -15,4 +15,4 @@ class SearchResponse(BaseModel):
     query: str
     count: int
     results: List[SearchResult]
-    answer: Optional[str]
+    answer: Union[str, None]

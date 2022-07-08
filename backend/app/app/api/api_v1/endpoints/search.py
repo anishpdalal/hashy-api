@@ -52,10 +52,10 @@ async def search(
         metadata = match["metadata"]
         score = match["score"]
         doc_type = metadata["doc_type"]
-        if doc_type == "zendesk_hc_article_title" and not results["answer"]:
+        if doc_type == "zendesk_hc_article_body" and results["answer"] is None:
             prompt = "Answer the question based on the context below, and if the question can't be answered based on the context, say \"I don't know\"\n\nContext:\n{0}\n\n---\n\nQuestion: {1}\nAnswer:"
             response = openai.Completion.create(
-                engine="text-davinci-002",
+                engine="text-curie-001",
                 prompt=prompt.format(metadata["text"], query),
                 temperature=0,
                 max_tokens=100,
@@ -72,4 +72,6 @@ async def search(
             "text": metadata["text"]
         }
         results["results"].append(result)
+    if results["answer"].startswith("I don't know"):
+        results["answer"] = None
     return results
