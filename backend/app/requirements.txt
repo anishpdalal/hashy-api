@@ -1,5 +1,6 @@
 alembic
 asyncpg
+boto3
 httpx-oauth
 fastapi
 fastapi-users[sqlalchemy,oauth]

@@ -1,6 +1,7 @@
 import json
 import os
 
+import boto3
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 import requests
@@ -17,9 +18,9 @@ async def zendesk_oauth_redirect(code: str, state: str, db: AsyncSession = Depen
     parameters = {
         "grant_type": "authorization_code",
         "code": code,
-        "client_id": os.environ["ZENDESK_CLIENT_ID"],
-        "client_secret": os.environ["ZENDESK_SECRET"],
-        "redirect_uri": os.environ["ZENDESK_REDIRECT_URI"],
+        "client_id": os.getenv("ZENDESK_CLIENT_ID"),
+        "client_secret": os.getenv("ZENDESK_SECRET"),
+        "redirect_uri": os.getenv("ZENDESK_REDIRECT_URI"),
         "scope": "users:read tickets:read hc:read triggers:read triggers:write automations:read automations:write",
         "state": state
     }
@@ -40,4 +41,9 @@ async def zendesk_oauth_redirect(code: str, state: str, db: AsyncSession = Depen
         source = await update_source(db, str(source.id), {"shared_with": user_emails, "extra": extra})
     else:
         source = await create_source(db, user_id, "zendesk_integration", user_emails, extra=extra)
+    lambda_client = boto3.client("lambda", region_name="us-east-1")
+    lambda_client.invoke(
+        FunctionName=os.getenv("SCHEDULER_FUNCTION"),
+        Payload=json.dumps({"source_id": str(source["id"])})
+    )
     return source

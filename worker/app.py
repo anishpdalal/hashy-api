@@ -46,8 +46,12 @@ def get_credentials(source):
     return subdomain, access_token
 
 
-def get_zendesk_help_center_article(subdomain, access_token, source_id, article_id):
-    url = f"https://{subdomain}/api/v2/help_center/articles/{article_id}.json"
+def get_zendesk_help_center_article(source, doc_id):
+    subdomain, access_token = get_credentials(source)
+    if not subdomain and not access_token:
+        return
+    source_id = source.id
+    url = f"https://{subdomain}/api/v2/help_center/articles/{doc_id}.json"
     bearer_token = f"Bearer {access_token}"
     header = {'Authorization': bearer_token}
     data = requests.get(url, headers=header).json()
@@ -62,7 +66,7 @@ def get_zendesk_help_center_article(subdomain, access_token, source_id, article_
     headers = soup.find_all(re.compile('^h[1-6]$'))
     results = []
     results.append({
-        "id": f"{subdomain}-{article_id}",
+        "id": f"{subdomain}-{doc_id}",
         "display_text": article_title,
         "text_to_index": article_title,
         "source_id": str(source_id),
@@ -81,7 +85,7 @@ def get_zendesk_help_center_article(subdomain, access_token, source_id, article_
                 display_text = unicodedata.normalize("NFKD", article_body[loc:header_locations[idx+1]])
             text_to_index = " ".join(seg.segment(display_text))
             results.append({
-                "id": f"{subdomain}-{article_id}-{idx}",
+                "id": f"{subdomain}-{doc_id}-{idx}",
                 "display_text": display_text,
                 "text_to_index": text_to_index,
                 "source_id": str(source_id),
@@ -98,7 +102,7 @@ def get_zendesk_help_center_article(subdomain, access_token, source_id, article_
             chunk = chunks[i:i+chunk_size]
             text_to_index = " ".join(chunk)
             results.append({
-                "id": f"{subdomain}-{article_id}-{idx}",
+                "id": f"{subdomain}-{doc_id}-{idx}",
                 "display_text": text_to_index,
                 "text_to_index": text_to_index,
                 "source_id": str(source_id),
@@ -111,7 +115,7 @@ def get_zendesk_help_center_article(subdomain, access_token, source_id, article_
     return results
 
 
-def index_zendesk_help_center_articles(index, bi_encoder, results):
+def index_documents(index, bi_encoder, results):
     text_embeddings = bi_encoder.encode([result["text_to_index"] for result in results]).tolist()
     upsert_data_generator = map(lambda i: (
         results[i]["id"],
@@ -130,6 +134,19 @@ def index_zendesk_help_center_articles(index, bi_encoder, results):
         index.upsert(vectors=ids_vectors_chunk)
 
 
+def store_document(engine, doc_id, owner, doc_type, doc_name, doc_last_updated):
+    with engine.connect() as connection:
+        document = connection.execute(
+            text(f"select id from document where doc_id = '{doc_id}' and owner = '{owner}' and type = '{doc_type}'")
+        ).fetchone()
+        current = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        if not document:
+            doc_pk = str(uuid.uuid4())
+            connection.execute(text(f"insert into document (id, owner, name, type, doc_id, doc_last_updated, created) values ('{doc_pk}', '{owner}', '{doc_name}', '{doc_type}', '{doc_id}', '{doc_last_updated}'::timestamp with TIME ZONE, '{current}'::timestamp with TIME ZONE)"))
+        else:
+            connection.execute(text(f"update document SET updated = '{current}'::timestamp with TIME ZONE, doc_last_updated = '{doc_last_updated}'::timestamp with TIME ZONE where id = '{document.id}'"))
+
+
 def handler(event, context):
     PINECONE_KEY = os.environ["PINECONE_KEY"]
     pinecone.init(api_key=PINECONE_KEY, environment="us-west1-gcp")
@@ -142,23 +159,15 @@ def handler(event, context):
         source = get_source(engine, source_id)
         if not source:
             continue
-        if source['name'] == "zendesk_integration":
-            subdomain, access_token = get_credentials(source)
-            if not subdomain and not access_token:
-                continue
-            article_id = record_body["article_id"]
-            results = get_zendesk_help_center_article(subdomain, access_token, source_id, article_id)
-            index_zendesk_help_center_articles(index, bi_encoder, results)
-        with engine.connect() as connection:
-            document = connection.execute(
-                text(f"select id from document where doc_id = '{article_id}' and owner = '{source['owner']}' and type = 'zendesk_help_center_article'")
-            ).fetchone()
-            article_name = results[0]["doc_name"]
-            article_last_updated = results[0]["doc_last_updated"]
-            current = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-            if not document:
-                doc_id = str(uuid.uuid4())
-                connection.execute(text(f"insert into document (id, owner, name, type, doc_id, doc_last_updated, created) values ('{doc_id}', '{source['owner']}', '{article_name}', 'zendesk_help_center_article', '{article_id}', '{article_last_updated}'::timestamp with TIME ZONE, '{current}'::timestamp with TIME ZONE)"))
-            else:
-                connection.execute(text(f"update document SET updated = '{current}'::timestamp with TIME ZONE where id = '{document.id}'"))
+        owner = source["owner"]
+        doc_type = record_body["doc_type"]
+        doc_id = record_body["doc_id"]
+        doc_name = record_body["doc_name"]
+        doc_last_updated = record_body["doc_last_updated"]
+        results = None
+        if doc_type == "zendesk_help_center_article":
+            results = get_zendesk_help_center_article(source, doc_id)
+        if results:
+            index_documents(index, bi_encoder, results)
+            store_document(engine, doc_id, owner, doc_type, doc_name, doc_last_updated)
     engine.dispose()
