@@ -1,9 +1,11 @@
 alembic
 asyncpg
+awslambdaric
 boto3
 httpx-oauth
 fastapi
 fastapi-users[sqlalchemy,oauth]
+mangum
 openai
 pinecone-client
 sqlalchemy-utils

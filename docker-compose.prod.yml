@@ -10,3 +10,8 @@ services:
     build:
       context: ./scheduler
       dockerfile: Dockerfile
+  
+  api-prod:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
