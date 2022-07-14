@@ -1,6 +1,5 @@
-import json
 from typing import Any, Dict, List
-from sqlalchemy import select, update
+from sqlalchemy import select, update, or_
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +22,7 @@ async def create_source(
     db.add(source)
     await db.commit()
     await db.refresh(source)
+    source = await get_source(db, user_id, name)
     return source
 
 
@@ -33,14 +33,15 @@ async def get_source(
 ):
     stmt = select(Source).where(Source.owner == user_id, Source.name == name)
     result = await db.execute(stmt)
-    return result.scalar_one()
+    return result.scalars().first()
 
 
 async def get_sources(
     db: AsyncSession,
-    user_id: str
+    user_id: str,
+    user_email: str
 ):
-    stmt = select(Source).where(Source.owner == user_id)
+    stmt = select(Source).where(or_(Source.owner == user_id, Source.shared_with.contains([user_email])))
     result = await db.execute(stmt)
     return result.scalars().all()
 

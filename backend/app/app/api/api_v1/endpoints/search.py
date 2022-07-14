@@ -31,7 +31,8 @@ async def search(
     count: int = 10
 ):
     user_id = str(user.id)
-    source_ids = [str(source.id) for source in await get_sources(db, user_id)]
+    user_email = user.email
+    source_ids = [str(source.id) for source in await get_sources(db, user_id, user_email)]
     filter = {"source_id": {"$in": source_ids}}
     query_embedding = search_model.encode([query])
     query_results = index.query(

@@ -8,11 +8,10 @@ import requests
 
 from app.api.deps import get_async_session
 from app.crud.source import create_source, get_source, update_source
-from app.schemas.sources import SourceResponse
 
 api_router = APIRouter()
 
-@api_router.get("/sources/zendesk/oauth_redirect", tags=["sources"], response_model=SourceResponse)
+@api_router.get("/sources/zendesk/oauth_redirect", tags=["sources"])
 async def zendesk_oauth_redirect(code: str, state: str, db: AsyncSession = Depends(get_async_session)):
     user_id, subdomain = state.split("|")
     parameters = {
@@ -44,6 +43,6 @@ async def zendesk_oauth_redirect(code: str, state: str, db: AsyncSession = Depen
     lambda_client = boto3.client("lambda", region_name="us-east-1")
     lambda_client.invoke(
         FunctionName=os.getenv("SCHEDULER_FUNCTION"),
-        Payload=json.dumps({"source_id": str(source["id"])})
+        Payload=json.dumps({"source_id": str(source.id)})
     )
-    return source
+    return {"message": "success"}
