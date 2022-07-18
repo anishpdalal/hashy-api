@@ -1,5 +1,6 @@
 awslambdaric
 boto3
+pytz
 requests
 psycopg2-binary
 sqlalchemy-utils

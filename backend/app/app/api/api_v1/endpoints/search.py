@@ -52,8 +52,7 @@ async def search(
     for match in matches:
         metadata = match["metadata"]
         score = match["score"]
-        doc_type = metadata["doc_type"]
-        if doc_type == "zendesk_hc_article_body" and results["answer"] is None:
+        if results["answer"] is None:
             prompt = "Answer the question based on the context below, and if the question can't be answered based on the context, say \"I don't know\"\n\nContext:\n{0}\n\n---\n\nQuestion: {1}\nAnswer:"
             response = openai.Completion.create(
                 engine="text-curie-001",

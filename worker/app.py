@@ -80,9 +80,10 @@ def get_zendesk_help_center_article(source, doc_id):
         header_locations = [0] + [article_body.find(str(header)) for header in headers]
         for idx, loc in enumerate(header_locations):
             if idx == len(header_locations) - 1:
-                display_text = unicodedata.normalize("NFKD", article_body[loc:])
+                article_text = article_body[loc:]
             else:
-                display_text = unicodedata.normalize("NFKD", article_body[loc:header_locations[idx+1]])
+                article_text = article_body[loc:header_locations[idx+1]]
+            display_text = unicodedata.normalize("NFKD", article_text)
             text_to_index = " ".join(seg.segment(display_text))
             results.append({
                 "id": f"{subdomain}-{doc_id}-{idx}",
@@ -96,11 +97,11 @@ def get_zendesk_help_center_article(source, doc_id):
                 "doc_labels": article_labels,
             })
     else:
-        chunks = seg.segment(text)
+        chunks = seg.segment(article_body)
         chunk_size = 5
         for idx, i in enumerate(range(0, len(chunks), chunk_size)):
             chunk = chunks[i:i+chunk_size]
-            text_to_index = " ".join(chunk)
+            text_to_index = unicodedata.normalize("NFKD", " ".join(chunk))
             results.append({
                 "id": f"{subdomain}-{doc_id}-{idx}",
                 "display_text": text_to_index,
@@ -113,6 +114,36 @@ def get_zendesk_help_center_article(source, doc_id):
                 "doc_labels": article_labels,
             })
     return results
+
+def get_zendesk_ticket(source, doc_id):
+    subdomain, access_token = get_credentials(source)
+    if not subdomain and not access_token:
+        return
+    source_id = source.id
+    url = f"https://{subdomain}/api/v2/tickets/{doc_id}.json"
+    bearer_token = f"Bearer {access_token}"
+    header = {'Authorization': bearer_token}
+    data = requests.get(url, headers=header).json()
+    ticket = data["ticket"]
+    subject = unicodedata.normalize("NFKD", ticket["subject"])
+    description = unicodedata.normalize("NFKD", ticket["description"])
+    ticket_last_updated = ticket["updated_at"]
+    ticket_url = ticket["url"]
+    ticket_labels = ticket["tags"]
+    return [
+        {
+            "id": f"{subdomain}-{doc_id}-{0}",
+            "display_text": description,
+            "text_to_index": f"{subject} | {description}",
+            "source_id": str(source_id),
+            "doc_type": "zendesk_ticket",
+            "doc_last_updated": ticket_last_updated,
+            "doc_url": ticket_url,
+            "doc_name": subject,
+            "doc_labels": ticket_labels,
+        }
+    ]
+
 
 
 def index_documents(index, bi_encoder, results):
@@ -167,6 +198,10 @@ def handler(event, context):
         results = None
         if doc_type == "zendesk_help_center_article":
             results = get_zendesk_help_center_article(source, doc_id)
+        elif doc_type == "zendesk_ticket":
+            results = get_zendesk_ticket(source, doc_id)
+        else:
+            continue
         if results:
             index_documents(index, bi_encoder, results)
             store_document(engine, doc_id, owner, doc_type, doc_name, doc_last_updated)
