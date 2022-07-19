@@ -12,7 +12,14 @@ class SearchResult(BaseModel):
 
 
 class SearchResponse(BaseModel):
+    query_id: str
     query: str
     count: int
     results: List[SearchResult]
     answer: Union[str, None]
+
+
+class Event(BaseModel):
+    query_id: str
+    event_type: str
+    message: str

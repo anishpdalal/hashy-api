@@ -1,13 +1,16 @@
+import csv
 import json
 import os
 
 import boto3
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 import requests
 
-from app.api.deps import get_async_session
+from app.api.deps import current_active_user, get_async_session
 from app.crud.source import create_source, get_source, update_source
+from app.models.user import User
 
 api_router = APIRouter()
 
@@ -46,3 +49,30 @@ async def zendesk_oauth_redirect(code: str, state: str, db: AsyncSession = Depen
         Payload=json.dumps({"source_id": str(source.id)})
     )
     return {"message": "success"}
+
+
+@api_router.get("/sources/zendesk", tags=["sources"])
+async def get_zendesk_user_source(
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_async_session)
+):
+    source = await get_source(db, str(user.id), "zendesk_integration")
+    if source is None:
+        raise HTTPException(status_code=404, detail="zendesk source not found")
+    return {
+        "id": str(source.id),
+        "owner": str(source.owner),
+        "name": source.name
+    }
+
+
+@api_router.get("/sources/zendesk/analytics", tags=["sources"])
+async def get_zendesk_user_source(
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_async_session)
+):
+    f = open("tmp.csv", "w")
+    writer = csv.writer(f)
+    writer.writerow(["foo", "bar"])
+    f.close()
+    return FileResponse(path="tmp.csv", filename="test.csv", media_type="text/csv")
