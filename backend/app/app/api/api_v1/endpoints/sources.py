@@ -23,7 +23,7 @@ async def zendesk_oauth_redirect(code: str, state: str, db: AsyncSession = Depen
         "client_id": os.getenv("ZENDESK_CLIENT_ID"),
         "client_secret": os.getenv("ZENDESK_SECRET"),
         "redirect_uri": os.getenv("ZENDESK_REDIRECT_URI"),
-        "scope": "users:read tickets:read hc:read triggers:read triggers:write automations:read automations:write",
+        "scope": "read",
         "state": state
     }
     payload = json.dumps(parameters)
@@ -35,7 +35,7 @@ async def zendesk_oauth_redirect(code: str, state: str, db: AsyncSession = Depen
     extra = json.dumps({"access_token": access_token, "subdomain": subdomain})
     bearer_token = f"Bearer {access_token}"
     header = {'Authorization': bearer_token}
-    url = f"https://{subdomain}/api/v2/users.json?role[]=agent&role[]=admin"
+    url = f"https://{subdomain}/api/v2/users.json?page[size]=100&role[]=agent&role[]=admin"
     r = requests.get(url, headers=header)
     user_emails = [r["email"] for r in r.json().get("users", [])]
     source = await get_source(db, user_id, "zendesk_integration")

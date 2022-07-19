@@ -16,6 +16,7 @@ from app.models.user import User
 from app.schemas.search import Event, SearchResponse
 
 PINECONE_KEY = os.getenv("PINECONE_KEY")
+namespace = os.getenv("PINECONE_NAMESPACE")
 pinecone.init(api_key=PINECONE_KEY, environment="us-west1-gcp")
 index = pinecone.Index(index_name="semantic-text-search")
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -44,7 +45,8 @@ async def search(
         top_k=count,
         filter=filter,
         include_metadata=True,
-        include_values=False
+        include_values=False,
+        namespace=namespace
     )
     matches = query_results["results"][0]["matches"]
     results = {

@@ -57,7 +57,7 @@ def get_zendesk_help_center_article(source, doc_id):
     data = requests.get(url, headers=header).json()
     article = data["article"]
     article_title = article["title"]
-    article_url = article["url"]
+    article_url = article["html_url"]
     article_last_updated = article["updated_at"]
     article_body = article["body"]
     article_labels = article.get("label_names", [])
@@ -66,7 +66,7 @@ def get_zendesk_help_center_article(source, doc_id):
     headers = soup.find_all(re.compile('^h[1-6]$'))
     results = []
     results.append({
-        "id": f"{subdomain}-{doc_id}",
+        "id": f"{subdomain}-{doc_id}-hc",
         "display_text": article_title,
         "text_to_index": article_title,
         "source_id": str(source_id),
@@ -86,7 +86,7 @@ def get_zendesk_help_center_article(source, doc_id):
             display_text = unicodedata.normalize("NFKD", article_text)
             text_to_index = " ".join(seg.segment(display_text))
             results.append({
-                "id": f"{subdomain}-{doc_id}-{idx}",
+                "id": f"{subdomain}-{doc_id}-hc-{idx}",
                 "display_text": display_text,
                 "text_to_index": text_to_index,
                 "source_id": str(source_id),
@@ -103,7 +103,7 @@ def get_zendesk_help_center_article(source, doc_id):
             chunk = chunks[i:i+chunk_size]
             text_to_index = unicodedata.normalize("NFKD", " ".join(chunk))
             results.append({
-                "id": f"{subdomain}-{doc_id}-{idx}",
+                "id": f"{subdomain}-{doc_id}-hc-{idx}",
                 "display_text": text_to_index,
                 "text_to_index": text_to_index,
                 "source_id": str(source_id),
@@ -125,16 +125,17 @@ def get_zendesk_ticket(source, doc_id):
     header = {'Authorization': bearer_token}
     data = requests.get(url, headers=header).json()
     ticket = data["ticket"]
+    assignee_id = ticket["assignee_id"]
     subject = unicodedata.normalize("NFKD", ticket["subject"])
     description = unicodedata.normalize("NFKD", ticket["description"])
     ticket_last_updated = ticket["updated_at"]
-    ticket_url = ticket["url"]
+    ticket_url = ticket["url"].replace("api/v2", "agent").replace(".json", "")
     ticket_labels = ticket["tags"]
-    return [
+    results = [
         {
-            "id": f"{subdomain}-{doc_id}-{0}",
+            "id": f"{subdomain}-{doc_id}-zt",
             "display_text": description,
-            "text_to_index": f"{subject} | {description}",
+            "text_to_index": f"{subject}. {description}",
             "source_id": str(source_id),
             "doc_type": "zendesk_ticket",
             "doc_last_updated": ticket_last_updated,
@@ -143,6 +144,24 @@ def get_zendesk_ticket(source, doc_id):
             "doc_labels": ticket_labels,
         }
     ]
+    url = f"https://{subdomain}/api/v2/tickets/{doc_id}/comments?page[size]=100&sort=-created_at"
+    comments = requests.get(url, headers=header).json().get("comments", [])
+    for idx, comment in enumerate(comments):
+        if comment.get("author_id") == assignee_id:
+            results.append(
+                {
+                    "id": f"{subdomain}-{doc_id}-{idx}-ztc",
+                    "display_text": comment["body"],
+                    "text_to_index": comment["body"],
+                    "source_id": str(source_id),
+                    "doc_type": "zendesk_ticket_comment",
+                    "doc_last_updated": comment["created_at"],
+                    "doc_url": ticket_url,
+                    "doc_name": subject,
+                    "doc_labels": ticket_labels,
+                }
+            )
+    return results
 
 
 
@@ -162,7 +181,7 @@ def index_documents(index, bi_encoder, results):
         }), range(len(results))
     )
     for ids_vectors_chunk in chunks(upsert_data_generator, batch_size=100):
-        index.upsert(vectors=ids_vectors_chunk)
+        index.upsert(vectors=ids_vectors_chunk, namespace=os.environ["PINECONE_NAMESPACE"])
 
 
 def store_document(engine, doc_id, owner, doc_type, doc_name, doc_last_updated):

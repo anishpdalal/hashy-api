@@ -100,7 +100,11 @@ def get_zendesk_tickets(source):
     while results["meta"]["has_more"]:
         next_link = results["links"]["next"]
         results = requests.get(next_link, headers=header).json()
-        tickets.extend(filter_tickets(results.get("tickets", []), source))
+        result_tickets = results["tickets"]
+        latest_ticket_updated = pytz.utc.localize(datetime.datetime.strptime(result_tickets[0]["updated_at"], "%Y-%m-%dT%H:%M:%SZ"))
+        if (datetime.datetime.now(datetime.timezone.utc) - latest_ticket_updated).days > 90:
+            break
+        tickets.extend(filter_tickets(result_tickets, source))
 
     return tickets
 
@@ -121,6 +125,9 @@ def handler(event, context):
                 documents.extend(get_zendesk_tickets(source))
             except Exception as e:
                 logger.error(str(e))
+        with engine.connect() as connection:
+            current = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+            connection.execute(text(f"update source SET updated = '{current}'::timestamp with TIME ZONE where id = '{source.id}'"))
     for document in documents:
         messages.append({
             "MessageBody": json.dumps(document),

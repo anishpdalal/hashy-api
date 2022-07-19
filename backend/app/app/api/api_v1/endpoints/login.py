@@ -68,7 +68,7 @@ async def zendesk_auth(auth: ZendeskAuth, user: User = Depends(current_active_us
         "response_type": "code",
         "redirect_uri": os.getenv("ZENDESK_REDIRECT_URI"),
         "client_id": os.getenv("ZENDESK_CLIENT_ID"),
-        "scope": "users:read tickets:read hc:read triggers:read triggers:write automations:read automations:write",
+        "scope": "read",
         "state": f"{user_id}|{auth.subdomain}"
     }
     url = f"https://{auth.subdomain}/oauth/authorizations/new?{urlencode(parameters)}"
