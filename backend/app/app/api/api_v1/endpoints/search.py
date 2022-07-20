@@ -2,6 +2,7 @@ import os
 import uuid
 
 from fastapi import APIRouter, Depends
+import gantry
 import openai
 import pinecone
 from sentence_transformers import SentenceTransformer
@@ -16,11 +17,15 @@ from app.models.user import User
 from app.schemas.search import Event, SearchResponse
 
 PINECONE_KEY = os.getenv("PINECONE_KEY")
-namespace = os.getenv("PINECONE_NAMESPACE")
+environment = os.getenv("ENVIRONMENT")
 pinecone.init(api_key=PINECONE_KEY, environment="us-west1-gcp")
 index = pinecone.Index(index_name="semantic-text-search")
 openai.api_key = os.getenv("OPENAI_API_KEY")
 search_model = SentenceTransformer("/mnt/bi_encoder")
+gantry.init(
+    api_key=os.getenv("GANTRY_API_KEY"),
+    environment=os.getenv("ENVIRONMENT")
+)
 
 api_router = APIRouter()
 
@@ -32,6 +37,7 @@ async def search(
     user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_session),
     count: int = 10,
+    log_id: str = None
 ):
     user_id = str(user.id)
     user_email = user.email
@@ -46,12 +52,13 @@ async def search(
         filter=filter,
         include_metadata=True,
         include_values=False,
-        namespace=namespace
+        namespace=environment
     )
     matches = query_results["results"][0]["matches"]
+    query_id = str(uuid.uuid4())
     results = {
         "query": query,
-        "query_id": str(uuid.uuid4()),
+        "query_id": query_id,
         "count": len(matches),
         "results": [],
         "answer": None
@@ -81,9 +88,33 @@ async def search(
             "text": metadata["text"]
         }
         results["results"].append(result)
+
+    if matches:
+        gantry.log_record(
+            application="search_endpoint",
+            version=0,
+            inputs={
+                "query": query,
+                "user_id": user_id,
+                "source_ids": source_ids,
+                "log_id": log_id
+            },
+            outputs={
+                "first_result_score": matches[0]["score"],
+                "first_result_doc_name": matches[0]["metadata"]["doc_name"],
+                "first_result_doc_url": matches[0]["metadata"]["doc_url"],
+            },
+            feedback_id={"id": query_id}
+        )
     return results
 
 
 @api_router.post("/log", tags=["search"])
 async def log(event: Event, user: User = Depends(current_active_user)):
+    gantry.log_record(
+        application="search_endpoint",
+        version=0,
+        feedback_id={"id": event.query_id},
+        feedback={"event_type": event.event_type, "message": event.message}
+    )
     return {"message": "success"}

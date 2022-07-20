@@ -1,10 +1,10 @@
-import csv
 import json
 import os
 
 import boto3
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
+import gantry.query as gquery
 from sqlalchemy.ext.asyncio import AsyncSession
 import requests
 
@@ -71,8 +71,33 @@ async def get_zendesk_user_source(
     user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_session)
 ):
-    f = open("tmp.csv", "w")
-    writer = csv.writer(f)
-    writer.writerow(["foo", "bar"])
-    f.close()
-    return FileResponse(path="tmp.csv", filename="test.csv", media_type="text/csv")
+    gquery.init(api_key=os.getenv("GANTRY_API_KEY"))
+    source = await get_source(db, str(user.id), "zendesk_integration")
+    source_id = str(source.id)
+    gdf = gquery.query(
+        application="search_endpoint",
+        version=0,
+        environment=os.getenv("ENVIRONMENT")
+    )
+    df = gdf.fetch().reset_index()
+    df = df[df["inputs.source_ids"].notna()]
+    columns = [
+        "timestamp",
+        "inputs.query",
+        "inputs.user_id",
+        "inputs.log_id",
+        "outputs.first_result_doc_name",
+        "outputs.first_result_doc_url"
+    ]
+    filtered_df = df[df["inputs.source_ids"].str.contains(source_id, na=False)][columns]
+    filtered_df.rename(
+        columns={
+            "inputs.log_id": "ticket_id",
+            "inputs.query": "query",
+            "outputs.first_result_doc_name": "first_result_doc_name",
+            "outputs.first_result_doc_url": "first_result_doc_url"
+        },
+        inplace=True
+    )
+    filtered_df.to_csv("/tmp/report.csv", index=False)
+    return FileResponse(path="/tmp/report.csv", filename="report.csv", media_type="text/csv")

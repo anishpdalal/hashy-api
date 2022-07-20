@@ -5,6 +5,7 @@ boto3
 httpx-oauth
 fastapi
 fastapi-users[sqlalchemy,oauth]
+gantry
 mangum
 openai
 pinecone-client
