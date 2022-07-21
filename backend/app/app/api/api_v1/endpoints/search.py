@@ -68,18 +68,21 @@ async def search(
         score = match["score"]
         if results["answer"] is None and len(matches) > 0:
             prompt = "Answer the question based on the context below, and if the question can't be answered based on the context, say \"I don't know\"\n\nContext:\n{0}\n\n---\n\nQuestion: {1}\nAnswer:"
-            response = openai.Completion.create(
-                engine="text-curie-001",
-                prompt=prompt.format(metadata["text"], query),
-                temperature=0,
-                max_tokens=100,
-                top_p=1,
-                frequency_penalty=0,
-                presence_penalty=0
-            )
-            results["answer"] = response.choices[0]["text"].strip()
-            if results["answer"].startswith("I don't know"):
-                results["answer"] = None
+            try:
+                response = openai.Completion.create(
+                    engine="text-curie-001",
+                    prompt=prompt.format(metadata["text"], query),
+                    temperature=0,
+                    max_tokens=100,
+                    top_p=1,
+                    frequency_penalty=0,
+                    presence_penalty=0
+                )
+                results["answer"] = response.choices[0]["text"].strip()
+                if results["answer"].startswith("I don't know"):
+                    results["answer"] = None
+            except Exception as e:
+                pass
         result = {
             "score": score,
             "doc_name": metadata["doc_name"],
