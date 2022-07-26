@@ -1,5 +1,6 @@
 import json
 import os
+from urllib.parse import urlencode
 
 import boto3
 from fastapi import APIRouter, Depends, HTTPException
@@ -51,6 +52,44 @@ async def zendesk_oauth_redirect(code: str, state: str, db: AsyncSession = Depen
     return {"message": "success"}
 
 
+@api_router.get("/sources/hubspot/oauth_redirect", tags=["sources"])
+async def hubspot_oauth_redirect(code: str, state: str, db: AsyncSession = Depends(get_async_session)):
+    user_id, subdomain = state.split("|")
+    scope = "content%20tickets%20settings.users.read%20cms.knowledge_base.articles.read%20settings.users.teams.read"
+    client_id = os.getenv("HUBSPOT_CLIENT_ID")
+    redirect_uri=os.getenv("HUBSPOT_REDIRECT_URI")
+    url = f"https://app.hubspot.com/oauth/authorize?client_id={client_id}&redirect_uri={redirect_uri}&scope={scope}&state={state}"
+    parameters = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "client_id": client_id,
+        "client_secret": os.getenv("HUBSPOT_SECRET"),
+        "redirect_uri": redirect_uri
+    }
+    url = "https://api.hubapi.com/oauth/v1/token"
+    r = requests.post(url=url, data=parameters)
+    data = r.json()
+    access_token = data["access_token"]
+    refresh_token = data["refresh_token"]
+    bearer_token = f"Bearer {access_token}"
+    header = {'Authorization': bearer_token}
+    url = "https://api.hubapi.com/settings/v3/users/"
+    response = requests.get(url, headers=header).json()
+    user_emails = [r["email"] for r in response.get("results", [])]
+    extra = json.dumps({"subdomain": subdomain, "refresh_token": refresh_token})
+    source = await get_source(db, user_id, "hubspot_integration")
+    if source:
+        source = await update_source(db, str(source.id), {"extra": extra, "shared_with": user_emails})
+    else:
+        source = await create_source(db, user_id, "hubspot_integration", user_emails, extra=extra)
+    lambda_client = boto3.client("lambda", region_name="us-east-1")
+    lambda_client.invoke(
+        FunctionName=os.getenv("SCHEDULER_FUNCTION"),
+        Payload=json.dumps({"source_id": str(source.id)})
+    )
+    return {"message": "success"}
+
+
 @api_router.get("/sources/zendesk", tags=["sources"])
 async def get_zendesk_user_source(
     user: User = Depends(current_active_user),
@@ -59,6 +98,21 @@ async def get_zendesk_user_source(
     source = await get_source(db, str(user.id), "zendesk_integration")
     if source is None:
         raise HTTPException(status_code=404, detail="zendesk source not found")
+    return {
+        "id": str(source.id),
+        "owner": str(source.owner),
+        "name": source.name
+    }
+
+
+@api_router.get("/sources/hubspot", tags=["sources"])
+async def get_zendesk_user_source(
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_async_session)
+):
+    source = await get_source(db, str(user.id), "hubspot_integration")
+    if source is None:
+        raise HTTPException(status_code=404, detail="hubspot source not found")
     return {
         "id": str(source.id),
         "owner": str(source.owner),

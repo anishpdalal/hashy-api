@@ -14,7 +14,7 @@ from app.api.deps import (
 )
 from app.crud.api_key import create_api_key, delete_api_key
 from app.models.user import User
-from app.schemas.auth import ZendeskAuth
+from app.schemas.auth import ZendeskAuth, HubSpotAuth
 from app.schemas.user import UserCreate, UserRead
 
 
@@ -72,4 +72,15 @@ async def zendesk_auth(auth: ZendeskAuth, user: User = Depends(current_active_us
         "state": f"{user_id}|{auth.subdomain}"
     }
     url = f"https://{auth.subdomain}/oauth/authorizations/new?{urlencode(parameters)}"
+    return {"authorization_url": url}
+
+
+@api_router.post("/auth/hubspot", tags=["auth"])
+async def hubspot_auth(auth: HubSpotAuth, user: User = Depends(current_active_user)):
+    user_id = user.id
+    state = f"{user_id}|{auth.subdomain}"
+    client_id = os.getenv("HUBSPOT_CLIENT_ID")
+    redirect_uri=os.getenv("HUBSPOT_REDIRECT_URI")
+    scope = "content%20tickets%20settings.users.read%20cms.knowledge_base.articles.read%20settings.users.teams.read"
+    url = f"https://app.hubspot.com/oauth/authorize?client_id={client_id}&redirect_uri={redirect_uri}&scope={scope}&state={state}"
     return {"authorization_url": url}
