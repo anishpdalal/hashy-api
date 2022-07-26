@@ -3,9 +3,11 @@ import itertools
 import json
 import logging
 import os
+from pydoc import doc
 import uuid
 
 import boto3
+import bs4
 import pytz
 import requests
 from sqlalchemy import create_engine, text
@@ -36,7 +38,7 @@ def get_sources(engine, source_id=None):
     return sources
 
 
-def get_credentials(source):
+def get_zendesk_credentials(source):
     extra = json.loads(source['extra']) if source['extra'] else {}
     subdomain = extra.get("subdomain")
     access_token = extra.get("access_token")
@@ -44,7 +46,7 @@ def get_credentials(source):
 
 
 def get_zendesk_hc_articles(source):
-    subdomain, access_token = get_credentials(source)
+    subdomain, access_token = get_zendesk_credentials(source)
     if not subdomain and not access_token:
         raise Exception("subdomain and access token need to be provided")
     if not source.updated:
@@ -87,7 +89,7 @@ def filter_tickets(tickets, source):
 
 
 def get_zendesk_tickets(source):
-    subdomain, access_token = get_credentials(source)
+    subdomain, access_token = get_zendesk_credentials(source)
     if not subdomain and not access_token:
         raise Exception("subdomain and access token need to be provided")
     url = f"https://{subdomain}/api/v2/users/me.json"
@@ -109,6 +111,36 @@ def get_zendesk_tickets(source):
     return tickets
 
 
+def get_hubspot_hc_articles(source): 
+    extra = json.loads(source['extra']) if source['extra'] else {}
+    subdomain = extra.get("subdomain")
+    if not subdomain:
+        raise Exception("subdomain need to be provided")
+    sitemap_url = f"https://{subdomain}/sitemap.xml"
+    content = requests.get(sitemap_url).content
+    soup = bs4.BeautifulSoup(content, features="xml")
+    urls = soup.find_all("url")
+    articles = []
+    for url in urls:
+        dt = datetime.datetime.strptime(str(url.find("lastmod").string), "%Y-%m-%d")
+        doc_lasted_updated = datetime.datetime.strftime(dt, "%Y-%m-%dT%H:%M:%SZ")
+        doc_lasted_updated_dt =  pytz.utc.localize(datetime.datetime.strptime(doc_lasted_updated, "%Y-%m-%dT%H:%M:%SZ"))
+        if source.updated is None or (datetime.datetime.now(datetime.timezone.utc) - doc_lasted_updated_dt).days <= 2:
+            link = str(url.find("loc").string)
+            doc_id = link.split("/")[-1]
+            doc_name = " ".join([word.capitalize() for word in link.split("/")[-1].split("-")])
+            articles.append({
+                "owner": str(source["owner"]),
+                "doc_type": "hubspot_help_center_article",
+                "doc_id": doc_id,
+                "doc_url": link,
+                "doc_name": doc_name,
+                "doc_last_updated": doc_lasted_updated,
+                "source_id": str(source["id"])
+            })
+    return articles
+
+
 def handler(event, context):
     engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URL"])
     sqs = boto3.resource("sqs", region_name="us-east-1")
@@ -119,12 +151,14 @@ def handler(event, context):
     source_id = body.get("source_id")
     sources = get_sources(engine, source_id=source_id)
     for source in sources:
-        if source.name == "zendesk_integration":
-            try:
+        try:
+            if source.name == "zendesk_integration":
                 documents.extend(get_zendesk_hc_articles(source))
                 documents.extend(get_zendesk_tickets(source))
-            except Exception as e:
-                logger.error(str(e))
+            elif source.name == "hubspot_integration":
+                documents.extend(get_hubspot_hc_articles(source))
+        except Exception as e:
+            logger.error(str(e))
         with engine.connect() as connection:
             current = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ")
             connection.execute(text(f"update source SET updated = '{current}'::timestamp with TIME ZONE where id = '{source.id}'"))

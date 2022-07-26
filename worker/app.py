@@ -115,6 +115,68 @@ def get_zendesk_help_center_article(source, doc_id):
             })
     return results
 
+
+def get_hubspot_help_center_article(source, doc_id, doc_url, doc_name, doc_last_updated):
+    source_id = source.id
+    subdomain = json.loads(source['extra'])["subdomain"]
+    page_content = requests.get(doc_url).content
+    soup = BeautifulSoup(page_content, "html.parser")
+    kb_content = str(soup.find("div", {"class": "kb-article"}))
+    seg = pysbd.Segmenter(language="en", clean=True)
+    headers = soup.find_all(re.compile('^h[1-6]$'))
+    results = []
+    results.append({
+        "id": f"{subdomain}-{doc_id}-hc",
+        "display_text": doc_name,
+        "text_to_index": doc_name,
+        "source_id": str(source_id),
+        "doc_type": "hubspot_hc_article_title",
+        "doc_last_updated": doc_last_updated,
+        "doc_url": doc_url,
+        "doc_name": doc_name,
+        "doc_labels": []
+    })
+    if headers:
+        header_locations = [0] + [kb_content.find(str(header)) for header in headers]
+        for idx, loc in enumerate(header_locations):
+            if idx == len(header_locations) - 1:
+                article_text = kb_content[loc:]
+            else:
+                article_text = kb_content[loc:header_locations[idx+1]]
+            display_text = unicodedata.normalize("NFKD", article_text)
+            text_to_index = " ".join(seg.segment(display_text))
+            results.append({
+                "id": f"{subdomain}-{doc_id}-hc-{idx}",
+                "display_text": display_text,
+                "text_to_index": text_to_index,
+                "source_id": str(source_id),
+                "doc_type": "hubspot_hc_article_body",
+                "doc_last_updated": doc_last_updated,
+                "doc_url": doc_url,
+                "doc_name": doc_name,
+                "doc_labels": []
+            })
+    else:
+        chunks = seg.segment(kb_content)
+        chunk_size = 5
+        for idx, i in enumerate(range(0, len(chunks), chunk_size)):
+            chunk = chunks[i:i+chunk_size]
+            text_to_index = unicodedata.normalize("NFKD", " ".join(chunk))
+            results.append({
+                "id": f"{subdomain}-{doc_id}-hc-{idx}",
+                "display_text": display_text,
+                "text_to_index": text_to_index,
+                "source_id": str(source_id),
+                "doc_type": "hubspot_hc_article_body",
+                "doc_last_updated": doc_last_updated,
+                "doc_url": doc_url,
+                "doc_name": doc_name,
+                "doc_labels": []
+            })
+    
+    return results
+
+
 def get_zendesk_ticket(source, doc_id):
     subdomain, access_token = get_credentials(source)
     if not subdomain and not access_token:
@@ -212,6 +274,7 @@ def handler(event, context):
         owner = source["owner"]
         doc_type = record_body["doc_type"]
         doc_id = record_body["doc_id"]
+        doc_url = record_body.get("doc_url")
         doc_name = record_body["doc_name"]
         doc_last_updated = record_body["doc_last_updated"]
         results = None
@@ -219,6 +282,8 @@ def handler(event, context):
             results = get_zendesk_help_center_article(source, doc_id)
         elif doc_type == "zendesk_ticket":
             results = get_zendesk_ticket(source, doc_id)
+        elif doc_type == "hubspot_help_center_article":
+            results = get_hubspot_help_center_article(source, doc_id, doc_url, doc_name, doc_last_updated)
         else:
             continue
         if results:

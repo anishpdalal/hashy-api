@@ -1,5 +1,7 @@
 awslambdaric
+beautifulsoup4
 boto3
+lxml
 pytz
 requests
 psycopg2-binary

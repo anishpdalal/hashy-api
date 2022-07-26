@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import requests
 
 from app.api.deps import current_active_user, get_async_session
-from app.crud.source import create_source, get_source, update_source
+from app.crud.source import create_source, get_source, get_sources, update_source
 from app.models.user import User
 
 api_router = APIRouter()
@@ -88,6 +88,36 @@ async def hubspot_oauth_redirect(code: str, state: str, db: AsyncSession = Depen
         Payload=json.dumps({"source_id": str(source.id)})
     )
     return {"message": "success"}
+
+
+@api_router.get("/sources/me", tags=["sources"])
+async def get_zendesk_user_source(
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_async_session)
+):
+    sources = await get_sources(db, str(user.id), "")
+    return [
+        {
+            "id": str(source.id),
+            "owner": str(source.owner),
+            "name": source.name
+        } for source in sources
+    ]
+
+
+@api_router.get("/sources", tags=["sources"])
+async def get_zendesk_user_source(
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_async_session)
+):
+    sources = await get_sources(db, str(user.id), user.email)
+    return [
+        {
+            "id": str(source.id),
+            "owner": str(source.owner),
+            "name": source.name
+        } for source in sources
+    ]
 
 
 @api_router.get("/sources/zendesk", tags=["sources"])
