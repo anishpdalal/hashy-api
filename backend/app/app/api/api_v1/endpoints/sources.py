@@ -1,11 +1,12 @@
+import datetime
 import json
 import os
-from urllib.parse import urlencode
 
 import boto3
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 import gantry.query as gquery
+import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncSession
 import requests
 
@@ -157,14 +158,21 @@ async def get_zendesk_user_source(
 ):
     gquery.init(api_key=os.getenv("GANTRY_API_KEY"))
     source = await get_source(db, str(user.id), "zendesk_integration")
-    source_id = str(source.id)
+    extra = json.loads(source.extra)
+    access_token = extra["access_token"]
+    subdomain = extra["subdomain"]
+    bearer_token = f"Bearer {access_token}"
+    header = {'Authorization': bearer_token}
+    current = datetime.datetime.now()
+    start = current - datetime.timedelta(days=30)
     gdf = gquery.query(
         application="search_endpoint",
         version=0,
-        environment=os.getenv("ENVIRONMENT")
+        environment=os.getenv("ENVIRONMENT"),
+        end_time=current.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+        start_time=start.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     )
     df = gdf.fetch().reset_index()
-    df = df[df["inputs.source_ids"].notna()]
     columns = [
         "timestamp",
         "inputs.query",
@@ -173,7 +181,7 @@ async def get_zendesk_user_source(
         "outputs.first_result_doc_name",
         "outputs.first_result_doc_url"
     ]
-    filtered_df = df[df["inputs.source_ids"].str.contains(source_id, na=False)][columns]
+    filtered_df = df[columns].copy()
     filtered_df.rename(
         columns={
             "inputs.log_id": "ticket_id",
@@ -183,5 +191,21 @@ async def get_zendesk_user_source(
         },
         inplace=True
     )
-    filtered_df.to_csv("/tmp/report.csv", index=False)
+    filtered_df["ticket_id"] = filtered_df["ticket_id"].astype("Int64")
+    unique_ticket_ids = filtered_df["ticket_id"].dropna().unique().tolist()
+    metrics = []
+    for ticket_id in unique_ticket_ids:
+        data = requests.get(f"https://{subdomain}/api/v2/tickets/{ticket_id}/metrics", headers=header).json()
+        ticket_metric = data.get("ticket_metric", {})
+        first_resolution_time_in_minutes = ticket_metric.get("first_resolution_time_in_minutes", {}).get("business")
+        full_resolution_time_in_minutes = ticket_metric.get("full_resolution_time_in_minutes", {}).get("business")
+        if first_resolution_time_in_minutes and full_resolution_time_in_minutes:
+            metrics.append([ticket_id, first_resolution_time_in_minutes, full_resolution_time_in_minutes])
+    metrics_df = pd.DataFrame(
+        data=metrics,
+        columns=["ticket_id", "first_resolution_time_in_minutes", "full_resolution_time_in_minutes"]
+    )
+    metrics_df["ticket_id"] = metrics_df["ticket_id"].astype("Int64")
+    joined_df = pd.merge(filtered_df, metrics_df, how="left", on="ticket_id")
+    joined_df.to_csv("/tmp/report.csv", index=False)
     return FileResponse(path="/tmp/report.csv", filename="report.csv", media_type="text/csv")

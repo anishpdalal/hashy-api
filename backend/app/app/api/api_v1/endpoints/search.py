@@ -99,7 +99,6 @@ async def search(
             inputs={
                 "query": query,
                 "user_id": user_id,
-                "source_ids": source_ids,
                 "log_id": log_id
             },
             outputs={
