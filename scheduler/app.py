@@ -96,7 +96,7 @@ def get_zendesk_tickets(source):
     bearer_token = f"Bearer {access_token}"
     header = {'Authorization': bearer_token}
     user_id = requests.get(url, headers=header).json()["user"]["id"]
-    url = f"https://{subdomain}/api/v2/users/{user_id}/tickets/assigned?page[size]=100&sort=-updated_at"
+    url = f"https://{subdomain}/api/v2/users/{user_id}/tickets/assigned?page[size]=50&sort=-updated_at"
     results = requests.get(url, headers=header).json()
     tickets = [ticket for ticket in filter_tickets(results.get("tickets", []), source)]
     while results["meta"]["has_more"]:

@@ -48,7 +48,8 @@ async def zendesk_oauth_redirect(code: str, state: str, db: AsyncSession = Depen
     lambda_client = boto3.client("lambda", region_name="us-east-1")
     lambda_client.invoke(
         FunctionName=os.getenv("SCHEDULER_FUNCTION"),
-        Payload=json.dumps({"source_id": str(source.id)})
+        Payload=json.dumps({"source_id": str(source.id)}),
+        InvocationType="Event"
     )
     return {"message": "success"}
 
@@ -86,7 +87,8 @@ async def hubspot_oauth_redirect(code: str, state: str, db: AsyncSession = Depen
     lambda_client = boto3.client("lambda", region_name="us-east-1")
     lambda_client.invoke(
         FunctionName=os.getenv("SCHEDULER_FUNCTION"),
-        Payload=json.dumps({"source_id": str(source.id)})
+        Payload=json.dumps({"source_id": str(source.id)}),
+        InvocationType="Event"
     )
     return {"message": "success"}
 
