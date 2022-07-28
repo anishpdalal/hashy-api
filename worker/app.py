@@ -125,17 +125,6 @@ def get_hubspot_help_center_article(source, doc_id, doc_url, doc_name, doc_last_
     seg = pysbd.Segmenter(language="en", clean=True)
     headers = soup.find_all(re.compile('^h[1-6]$'))
     results = []
-    results.append({
-        "id": f"{subdomain}-{doc_id}-hc",
-        "display_text": doc_name,
-        "text_to_index": doc_name,
-        "source_id": str(source_id),
-        "doc_type": "hubspot_hc_article_title",
-        "doc_last_updated": doc_last_updated,
-        "doc_url": doc_url,
-        "doc_name": doc_name,
-        "doc_labels": []
-    })
     if headers:
         header_locations = [0] + [kb_content.find(str(header)) for header in headers]
         for idx, loc in enumerate(header_locations):

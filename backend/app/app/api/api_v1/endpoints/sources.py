@@ -59,7 +59,7 @@ async def hubspot_oauth_redirect(code: str, state: str, db: AsyncSession = Depen
     user_id, subdomain = state.split("|")
     scope = "content%20tickets%20settings.users.read%20cms.knowledge_base.articles.read%20settings.users.teams.read"
     client_id = os.getenv("HUBSPOT_CLIENT_ID")
-    redirect_uri=os.getenv("HUBSPOT_REDIRECT_URI")
+    redirect_uri = os.getenv("HUBSPOT_REDIRECT_URI")
     url = f"https://app.hubspot.com/oauth/authorize?client_id={client_id}&redirect_uri={redirect_uri}&scope={scope}&state={state}"
     parameters = {
         "grant_type": "authorization_code",
@@ -135,6 +135,59 @@ async def get_zendesk_user_source(
         "id": str(source.id),
         "owner": str(source.owner),
         "name": source.name
+    }
+
+
+@api_router.get("/sources/zendesk/tickets/{ticket_id}", tags=["sources"])
+async def get_zendesk_ticket_subject(
+    ticket_id: int,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_async_session),
+):  
+    sources = await get_sources(db, str(user.id), user.email)
+    source = [source for source in sources if source.name == "zendesk_integration"][0]
+    if source is None:
+        raise HTTPException(status_code=404, detail="zendesk source not found")
+    extra = json.loads(source.extra)
+    access_token = extra["access_token"]
+    bearer_token = f"Bearer {access_token}"
+    header = {'Authorization': bearer_token}
+    subdomain = extra["subdomain"]
+    data = requests.get(f"https://{subdomain}/api/v2/tickets/{ticket_id}", headers=header).json()
+    ticket_subject = data["ticket"]["subject"]
+    return {
+        "ticket_subject": ticket_subject
+    }
+
+
+@api_router.get("/sources/hubspot/tickets/{ticket_id}", tags=["sources"])
+async def get_hubspot_ticket_subject(
+    ticket_id: int,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_async_session),
+):  
+    sources = await get_sources(db, str(user.id), user.email)
+    source = [source for source in sources if source.name == "hubspot_integration"][0]
+    if source is None:
+        raise HTTPException(status_code=404, detail="hubspot source not found")
+    extra = json.loads(source.extra)
+    refresh_token = extra["refresh_token"]
+    parameters = {
+        "grant_type": "refresh_token",
+        "client_id": os.getenv("HUBSPOT_CLIENT_ID"),
+        "client_secret": os.getenv("HUBSPOT_SECRET"),
+        "redirect_uri": os.getenv("HUBSPOT_REDIRECT_URI"),
+        "refresh_token": refresh_token
+    }
+    r = requests.post("https://api.hubapi.com/oauth/v1/token", data=parameters)
+    data = r.json()
+    access_token = data["access_token"]
+    bearer_token = f"Bearer {access_token}"
+    header = {'Authorization': bearer_token}
+    response = requests.get(f"https://api.hubapi.com/crm/v3/objects/tickets/{ticket_id}", headers=header).json()
+    ticket_subject = response["properties"]["subject"]
+    return {
+        "ticket_subject": ticket_subject
     }
 
 
