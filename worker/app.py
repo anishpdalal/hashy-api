@@ -222,7 +222,7 @@ def index_documents(index, bi_encoder, results):
         results[i]["id"],
         text_embeddings[i],
         {
-            "text": results[i]["display_text"],
+            "text": results[i]["display_text"][0:5000],
             "source_id": results[i]["source_id"],
             "doc_type": results[i]["doc_type"],
             "doc_last_updated": results[i]["doc_last_updated"],
