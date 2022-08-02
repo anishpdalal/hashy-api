@@ -243,7 +243,7 @@ def store_document(engine, doc_id, owner, doc_type, doc_name, doc_last_updated):
         current = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ")
         if not document:
             doc_pk = str(uuid.uuid4())
-            connection.execute(text(f"insert into document (id, owner, name, type, doc_id, doc_last_updated, created) values ('{doc_pk}', '{owner}', '{doc_name}', '{doc_type}', '{doc_id}', '{doc_last_updated}'::timestamp with TIME ZONE, '{current}'::timestamp with TIME ZONE)"))
+            connection.execute(text(f"insert into document (id, owner, name, type, doc_id, doc_last_updated, created) values ('{doc_pk}', '{owner}', :doc_name, '{doc_type}', '{doc_id}', '{doc_last_updated}'::timestamp with TIME ZONE, '{current}'::timestamp with TIME ZONE)"), {"doc_name": doc_name})
         else:
             connection.execute(text(f"update document SET updated = '{current}'::timestamp with TIME ZONE, doc_last_updated = '{doc_last_updated}'::timestamp with TIME ZONE where id = '{document.id}'"))
 
