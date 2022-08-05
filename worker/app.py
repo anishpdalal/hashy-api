@@ -1,5 +1,6 @@
 import datetime
 import itertools
+import logging
 import json
 import os
 import unicodedata
@@ -12,6 +13,9 @@ import pysbd
 import requests
 from sentence_transformers import SentenceTransformer
 from sqlalchemy import create_engine, text
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 
 def chunks(iterable, batch_size=100):
@@ -197,7 +201,7 @@ def get_zendesk_ticket(source, doc_id):
     ]
     url = f"https://{subdomain}/api/v2/tickets/{doc_id}/comments?page[size]=100&sort=-created_at"
     comments = requests.get(url, headers=header).json().get("comments", [])
-    for idx, comment in enumerate(comments):
+    for idx, comment in enumerate(comments[1:]):
         if comment.get("author_id") == assignee_id:
             results.append(
                 {
@@ -214,6 +218,51 @@ def get_zendesk_ticket(source, doc_id):
             )
     return results
 
+
+def get_hubspot_access_token(source):
+    extra = json.loads(source['extra']) if source['extra'] else {}
+    refresh_token = extra["refresh_token"]
+    parameters = {
+        "grant_type": "refresh_token",
+        "client_id": os.getenv("HUBSPOT_CLIENT_ID"),
+        "client_secret": os.getenv("HUBSPOT_SECRET"),
+        "redirect_uri": os.getenv("HUBSPOT_REDIRECT_URI"),
+        "refresh_token": refresh_token
+    }
+    r = requests.post("https://api.hubapi.com/oauth/v1/token", data=parameters)
+    data = r.json()
+    access_token = data["access_token"]
+    return access_token
+
+
+def get_hubspot_ticket(source, doc_id, portal_id):
+    source_id = source.id
+    access_token = get_hubspot_access_token(source)
+    headers = {
+        "accept": "application/json",
+        "Authorization": f"Bearer {access_token}"
+    }
+    url = f"https://api.hubapi.com/crm/v3/objects/tickets/{doc_id}"
+    response = requests.get(url, headers=headers).json()
+    subdomain = json.loads(source['extra'])["subdomain"]
+    description = response["properties"]["content"]
+    subject = response["properties"]["subject"]
+    ticket_last_updated = response["properties"]["hs_lastmodifieddate"]
+    ticket_url = f"https://app.hubspot.com/contacts/{portal_id}/ticket/{doc_id}"
+    results = [
+        {
+            "id": f"{subdomain}-{doc_id}-ht",
+            "display_text": description,
+            "text_to_index": f"{subject}. {description}",
+            "source_id": str(source_id),
+            "doc_type": "hubspot_ticket",
+            "doc_last_updated": ticket_last_updated,
+            "doc_url": ticket_url,
+            "doc_name": subject,
+            "doc_labels": [],
+        }
+    ]
+    return results
 
 
 def index_documents(index, bi_encoder, results):
@@ -256,26 +305,33 @@ def handler(event, context):
     engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URL"])
     for record in event['Records']:
         record_body = get_record_body(record)
-        source_id = uuid.UUID(record_body["source_id"])
-        source = get_source(engine, source_id)
-        if not source:
-            continue
-        owner = source["owner"]
-        doc_type = record_body["doc_type"]
-        doc_id = record_body["doc_id"]
-        doc_url = record_body.get("doc_url")
-        doc_name = record_body["doc_name"]
-        doc_last_updated = record_body["doc_last_updated"]
-        results = None
-        if doc_type == "zendesk_help_center_article":
-            results = get_zendesk_help_center_article(source, doc_id)
-        elif doc_type == "zendesk_ticket":
-            results = get_zendesk_ticket(source, doc_id)
-        elif doc_type == "hubspot_help_center_article":
-            results = get_hubspot_help_center_article(source, doc_id, doc_url, doc_name, doc_last_updated)
-        else:
-            continue
-        if results:
-            index_documents(index, bi_encoder, results)
-            store_document(engine, doc_id, owner, doc_type, doc_name, doc_last_updated)
+        logger.info(record_body)
+        try:
+            source_id = uuid.UUID(record_body["source_id"])
+            source = get_source(engine, source_id)
+            if not source:
+                continue
+            owner = source["owner"]
+            doc_type = record_body["doc_type"]
+            doc_id = record_body["doc_id"]
+            doc_url = record_body.get("doc_url")
+            doc_name = record_body["doc_name"]
+            doc_last_updated = record_body["doc_last_updated"]
+            results = None
+            if doc_type == "zendesk_help_center_article":
+                results = get_zendesk_help_center_article(source, doc_id)
+            elif doc_type == "zendesk_ticket":
+                results = get_zendesk_ticket(source, doc_id)
+            elif doc_type == "hubspot_help_center_article":
+                results = get_hubspot_help_center_article(source, doc_id, doc_url, doc_name, doc_last_updated)
+            elif doc_type == "hubspot_ticket":
+                portal_id = record_body["portal_id"]
+                results = get_hubspot_ticket(source, doc_id, portal_id)
+            else:
+                continue
+            if results:
+                index_documents(index, bi_encoder, results)
+                store_document(engine, doc_id, owner, doc_type, doc_name, doc_last_updated)
+        except Exception as e:
+            logger.error(e)
     engine.dispose()

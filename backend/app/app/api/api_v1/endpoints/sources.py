@@ -34,7 +34,6 @@ async def zendesk_oauth_redirect(code: str, state: str, db: AsyncSession = Depen
     r = requests.post(url=url, data=payload, headers=header)
     data = r.json()
     access_token = data["access_token"]
-    extra = json.dumps({"access_token": access_token, "subdomain": subdomain})
     bearer_token = f"Bearer {access_token}"
     header = {'Authorization': bearer_token}
     url = f"https://{subdomain}/api/v2/users.json?page[size]=100&role[]=agent&role[]=admin"
@@ -42,8 +41,12 @@ async def zendesk_oauth_redirect(code: str, state: str, db: AsyncSession = Depen
     user_emails = [r["email"] for r in r.json().get("users", [])]
     source = await get_source(db, user_id, "zendesk_integration")
     if source:
-        source = await update_source(db, str(source.id), {"shared_with": user_emails, "extra": extra})
+        extra = json.loads(source.extra).copy()
+        extra.update({"access_token": access_token, "subdomain": subdomain})
+        extra_str = json.dumps(extra)
+        source = await update_source(db, str(source.id), {"shared_with": user_emails, "extra": extra_str})
     else:
+        extra = json.dumps({"access_token": access_token, "subdomain": subdomain})
         source = await create_source(db, user_id, "zendesk_integration", user_emails, extra=extra)
     lambda_client = boto3.client("lambda", region_name="us-east-1")
     lambda_client.invoke(
@@ -78,11 +81,14 @@ async def hubspot_oauth_redirect(code: str, state: str, db: AsyncSession = Depen
     url = "https://api.hubapi.com/settings/v3/users/"
     response = requests.get(url, headers=header).json()
     user_emails = [r["email"] for r in response.get("results", [])]
-    extra = json.dumps({"subdomain": subdomain, "refresh_token": refresh_token})
     source = await get_source(db, user_id, "hubspot_integration")
     if source:
-        source = await update_source(db, str(source.id), {"extra": extra, "shared_with": user_emails})
+        extra = json.loads(source.extra).copy()
+        extra.update({"subdomain": subdomain, "refresh_token": refresh_token})
+        extra_str = json.dumps(extra)
+        source = await update_source(db, str(source.id), {"extra": extra_str, "shared_with": user_emails})
     else:
+        extra = json.dumps({"subdomain": subdomain, "refresh_token": refresh_token})
         source = await create_source(db, user_id, "hubspot_integration", user_emails, extra=extra)
     lambda_client = boto3.client("lambda", region_name="us-east-1")
     lambda_client.invoke(
