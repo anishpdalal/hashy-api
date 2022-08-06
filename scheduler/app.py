@@ -232,7 +232,10 @@ def get_hubspot_tickets(source):
     current_dt = datetime.datetime.now(datetime.timezone.utc)
     for result in results:
         ticket_last_updated = result["properties"]["hs_lastmodifieddate"]
-        ticket_last_updated_dt = pytz.utc.localize(datetime.datetime.strptime(ticket_last_updated, "%Y-%m-%dT%H:%M:%S.%fZ"))
+        try:
+            ticket_last_updated_dt = pytz.utc.localize(datetime.datetime.strptime(ticket_last_updated, "%Y-%m-%dT%H:%M:%S.%fZ"))
+        except:
+            ticket_last_updated_dt = pytz.utc.localize(datetime.datetime.strptime(ticket_last_updated, "%Y-%m-%dT%H:%M:%SZ"))
         if (current_dt - ticket_last_updated_dt).days <= 90:
             tickets.append({
                 "owner": str(source["owner"]),
